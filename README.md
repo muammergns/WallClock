@@ -1,3 +1,5 @@
+![Badge](https://hitscounter.dev/api/hit?url=https%3A%2F%2Fgithub.com%2Fmuammergns%2FWallClock&label=Visit&icon=award&color=%23198754&message=&style=for-the-badge&tz=Asia%2FIstanbul)
+
 # WallClock
 ## Eski android cihazlar için masa saati uygulaması
 - Atıl vaziyetteki android cihazları değerlendirmek amaçlandı.
