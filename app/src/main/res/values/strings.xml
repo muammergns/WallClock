@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">WallClock</string>
+    <string name="open_weather_map_api_code">Open Weather Map API Code</string>
+    <string name="city_name">City Name</string>
+    <string name="clock_text_size">Clock Text Size</string>
+    <string name="date_text_size">Date Text Size</string>
+    <string name="daily_text_size">Daily Text Size</string>
+</resources>
