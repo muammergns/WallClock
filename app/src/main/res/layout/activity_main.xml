@@ -9,6 +9,16 @@
     android:keepScreenOn="true"
     tools:context=".MainActivity">
 
+    <!-- hava durumu efekti. en arkada çizilir, yazıların üstünde kalmaz. -->
+    <com.gns.wallclock.WeatherEffectView
+        android:id="@+id/effectView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <TextView
         android:id="@+id/dateText"
         android:layout_width="0dp"

@@ -5,4 +5,6 @@
     <string name="clock_text_size">Clock Text Size</string>
     <string name="date_text_size">Date Text Size</string>
     <string name="daily_text_size">Daily Text Size</string>
+    <string name="effect_fps">Effect FPS (0 = off)</string>
+    <string name="shake_level">Shake Alert Sensitivity (0 = off, 10 = max)</string>
 </resources>

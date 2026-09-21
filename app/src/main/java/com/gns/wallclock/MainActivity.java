@@ -1,11 +1,8 @@
 package com.gns.wallclock;
 
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
-import android.os.Build;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -15,15 +12,14 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import com.gns.wallclock.databinding.ActivityMainBinding;
 import com.gns.wallclock.databinding.SettingsLayoutBinding;
 
-import java.io.IOException;
 import java.text.DateFormat;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
@@ -32,7 +28,6 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
-import okhttp3.ResponseBody;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -46,17 +41,16 @@ public class MainActivity extends AppCompatActivity {
     ActivityMainBinding binding;
     SettingsLayoutBinding settingsLayoutBinding;
     Handler handler = new Handler(Looper.getMainLooper());
-    Runnable runnable,runWeather,runIcon;
+    Runnable runnable,runWeather;
     DateFormat clockFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
     DateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy EEEE", Locale.getDefault());
     DateFormat dailyFormat = new SimpleDateFormat("HH",Locale.getDefault());
     String city;
     String apiKey;
     double temperature;
-    Drawable mainWeatherDrawable;
     String iconId ="";
-    Retrofit retrofit;
-    OpenWeatherMapAPI api;
+    OpenWeatherMapAPI apiHttps, apiHttp;
+    boolean useHttp;//son başarılı bağlantı http ile mi kuruldu
     int langNum;
     int unitNum;
     float clockTextSize;
@@ -65,6 +59,18 @@ public class MainActivity extends AppCompatActivity {
     SharedPreferences preferences;
     ArrayAdapter<String> langAdapter,metricAdapter;
     String defaultKey, defaultCity;
+    //üst üste bu kadar hata alınırsa ilgili veri temizlenir. 10 dakikada bir denendiği için 3 hata = 30 dakika.
+    static final int MAX_FAILURES = 3;
+    int weatherFailures, dailyFailures;
+    boolean hasWeather;//güncel hava durumu bilgisi alınabildi mi
+    float effectFps;
+    //sarsıntı alarmı. sarsıntı algılanınca ALARM_MS boyunca arka plan kırmızı olur ve bip sesi çalar.
+    static final int ALARM_MS = 3000;
+    ShakeDetector shakeDetector;
+    float shakeLevel;
+    ToneGenerator toneGenerator;
+    boolean alarmActive, resumed;
+    Runnable runAlarmEnd, runFlash, runFlashEnd;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,16 +85,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         //varsayılan değerler atanır.
-        binding.dailyText1.setText("");
-        binding.dailyText2.setText("");
-        binding.dailyText3.setText("");
-        binding.dailyText4.setText("");
-        binding.dailyText5.setText("");
-        binding.dailyText6.setText("");
-        binding.dailyText7.setText("");
-        binding.dailyText8.setText("");
-        binding.dailyText9.setText("");
-        binding.dailyText10.setText("");
+        clearDaily();
         binding.dateText.setText("");
         binding.clockText.setText("");
 
@@ -104,19 +101,27 @@ public class MainActivity extends AppCompatActivity {
 
         setTextSizes();//metin boyutları ayarlanır. Farklı ekran boyutunda çalışabilmek için.
 
-        //eski cihazlarda SSl sorunu yaşamamak için eklendi
-        String ssl = "http";
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            ssl+="s";
-        }else {
-            Toast.makeText(MainActivity.this, "Old device SSL disabled", Toast.LENGTH_SHORT).show();
-        }
+        //efekt kare hızı ayarlanır. 0 ise efekt kapalıdır.
+        effectFps = preferences.getFloat("effectFps",2);
+        binding.effectView.setFps(effectFps);
 
-        retrofit = new Retrofit.Builder()
-                .baseUrl(ssl+"://api.openweathermap.org/")
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-        api = retrofit.create(OpenWeatherMapAPI.class);
+        //sarsıntı hassasiyeti ayarlanır. 0 ise alarm kapalıdır.
+        shakeLevel = preferences.getFloat("shakeLevel",10);
+        shakeDetector = new ShakeDetector(this, this::startAlarm);
+        shakeDetector.setSensitivity(shakeLevel);
+        runAlarmEnd = this::stopAlarm;
+        //alarm sırasında yarım saniyede bir 100 ms beyaz ışık patlaması gösterilir.
+        runFlash = () -> {
+            handler.postDelayed(runFlash, 500);
+            binding.getRoot().setBackgroundColor(ContextCompat.getColor(this, R.color.white));
+            handler.postDelayed(runFlashEnd, 100);
+        };
+        runFlashEnd = () -> binding.getRoot().setBackgroundColor(ContextCompat.getColor(this, R.color.alarm_red));
+
+        //önce https denenir. bağlantı kurulamazsa http denenir (bkz. getWeather, getDaily).
+        //eski cihazlarda SSL sorunu yaşamamak için böyle yapıldı.
+        apiHttps = createApi("https://api.openweathermap.org/");
+        apiHttp = createApi("http://api.openweathermap.org/");
 
         //ayarlar penceresi için adapter oluşturulur.
         List<String> langlist = new ArrayList<>();
@@ -132,9 +137,12 @@ public class MainActivity extends AppCompatActivity {
         runnable = () ->{
             handler.postDelayed(runnable, 10000);
             Date date = Calendar.getInstance().getTime();
-            binding.dateText.setText(MessageFormat.format("{0} {1}{2}", dateFormat.format(date), Double.valueOf(temperature).intValue(),unitCodes[unitNum][0]));
+            //hava durumu bilgisi yoksa sıcaklık gösterilmez.
+            if (hasWeather)
+                binding.dateText.setText(MessageFormat.format("{0} {1}{2}", dateFormat.format(date), Double.valueOf(temperature).intValue(),unitCodes[unitNum][0]));
+            else
+                binding.dateText.setText(dateFormat.format(date));
             binding.clockText.setText(clockFormat.format(date));
-            binding.dateText.setCompoundDrawablesWithIntrinsicBounds(null,null,mainWeatherDrawable,null);
         };
 
         //10 dakikada 1 hava durumu güncellenir.
@@ -144,9 +152,6 @@ public class MainActivity extends AppCompatActivity {
             getDaily();
             binding.horizontalLayout.smoothScrollTo(0,0);
         };
-
-        //hava durumu güncellendiğinde harici olarak hava durumu ikonu sunucudan çekilir.
-        runIcon = this::getIcon;
 
         //uygulama açılışta ayarlar penceresi görüntülenir.
         //kendi kendine dokunma alan cihazlar için bu şekilde ayarlandı.
@@ -167,6 +172,8 @@ public class MainActivity extends AppCompatActivity {
         settingsLayoutBinding.clockTextSize.setText(String.valueOf(preferences.getFloat("clockTextSize",300)));
         settingsLayoutBinding.dateTextSize.setText(String.valueOf(preferences.getFloat("dateTextSize",55)));
         settingsLayoutBinding.dailyTextSize.setText(String.valueOf(preferences.getFloat("dailyTextSize",36)));
+        settingsLayoutBinding.effectFps.setText(String.valueOf(preferences.getFloat("effectFps",2)));
+        settingsLayoutBinding.shakeLevel.setText(String.valueOf(preferences.getFloat("shakeLevel",10)));
 
         //ayarlar penceresi için adapterlar oluşturulur.
         settingsLayoutBinding.langSpinner.setAdapter(langAdapter);
@@ -186,6 +193,8 @@ public class MainActivity extends AppCompatActivity {
             clockTextSize = getFloat(settingsLayoutBinding.clockTextSize,300);
             dateTextSize = getFloat(settingsLayoutBinding.dateTextSize,55);
             dailyTextSize = getFloat(settingsLayoutBinding.dailyTextSize,36);
+            effectFps = getFloat(settingsLayoutBinding.effectFps,2);
+            shakeLevel = getFloat(settingsLayoutBinding.shakeLevel,10);
             preferences.edit().putString("apikey",apiKey).apply();
             preferences.edit().putString("city", city).apply();
             preferences.edit().putInt("langnum",langNum).apply();
@@ -193,7 +202,11 @@ public class MainActivity extends AppCompatActivity {
             preferences.edit().putFloat("clockTextSize",clockTextSize).apply();
             preferences.edit().putFloat("dateTextSize",dateTextSize).apply();
             preferences.edit().putFloat("dailyTextSize",dailyTextSize).apply();
+            preferences.edit().putFloat("effectFps",effectFps).apply();
+            preferences.edit().putFloat("shakeLevel",shakeLevel).apply();
             setTextSizes();
+            binding.effectView.setFps(effectFps);
+            shakeDetector.setSensitivity(shakeLevel);
             getWeather();
             getDaily();
             binding.horizontalLayout.smoothScrollTo(0,0);
@@ -238,52 +251,84 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void getWeather(){
+        getWeather(useHttp, false);
+    }
+
+    //seçilen bağlantı (http/https) ile istek atılır. bağlantı kurulamazsa diğeri bir kez denenir.
+    void getWeather(boolean http, boolean retried){
+        OpenWeatherMapAPI api = http ? apiHttp : apiHttps;
         Call<WeatherResponse> call = api.getWeather(city, apiKey, unitCodes[unitNum][1], getLangCode(langNum));
         call.enqueue(new Callback<WeatherResponse>() {
             @Override
             public void onResponse(@NonNull Call<WeatherResponse> call, @NonNull Response<WeatherResponse> response) {
-                if (response.isSuccessful()) {
-                    WeatherResponse res = response.body();
-                    if (res == null) return;
-                    temperature = res.getMain().getTemperature();
-                    iconId = res.getWeather().get(0).getIconId();
-                    //eski cihazlarda http bağlantıda dahi SSL sorunu olduğu için pasif hale getirildi
-                    //çok da önemli değil zaten
-                    //todo buna daha sonra çok daha mantıklı bir çözüm bulunacak
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-                        handler.post(runIcon);
+                //sunucu cevap verdi, yani bu bağlantı yöntemi çalışıyor. cevap hata olsa bile bağlantı sorunu değildir.
+                setConnection(http);
+                WeatherResponse res = response.isSuccessful() ? response.body() : null;
+                //geçerli veri alınamayan her durum (http hatası, boş yanıt) hata sayılır.
+                if (res == null || res.getMain() == null || res.getWeather() == null || res.getWeather().isEmpty()) {
+                    weatherFailed();
+                    return;
                 }
+                weatherFailures = 0;
+                hasWeather = true;
+                temperature = res.getMain().getTemperature();
+                String icon = res.getWeather().get(0).getIconId();
+                iconId = icon == null ? "" : icon;
+                applyBackground();
             }
             @Override
             public void onFailure(@NonNull Call<WeatherResponse> call, @NonNull Throwable t) {
                 Log.e(TAG, "onFailure: Weather not loaded", t);
+                //bağlantı kurulamadı. diğer yöntem denenmediyse önce o denenir, henüz hata sayılmaz.
+                if (!retried) {
+                    getWeather(!http, true);
+                    return;
+                }
+                weatherFailed();
             }
         });
     }
 
     void getDaily(){
+        getDaily(useHttp, false);
+    }
+
+    //seçilen bağlantı (http/https) ile istek atılır. bağlantı kurulamazsa diğeri bir kez denenir.
+    void getDaily(boolean http, boolean retried){
+        OpenWeatherMapAPI api = http ? apiHttp : apiHttps;
         Call<ForecastResponse> call = api.getForecast(city,apiKey,unitCodes[unitNum][1],getLangCode(langNum));
         call.enqueue(new Callback<ForecastResponse>() {
             @Override
             public void onResponse(@NonNull Call<ForecastResponse> call, @NonNull Response<ForecastResponse> response) {
-                ForecastResponse res = response.body();
-                if (res == null) return;
-                if (res.getLists().size()>=10){
-                    binding.dailyText1.setText(getDailyText(res,0));
-                    binding.dailyText2.setText(getDailyText(res,1));
-                    binding.dailyText3.setText(getDailyText(res,2));
-                    binding.dailyText4.setText(getDailyText(res,3));
-                    binding.dailyText5.setText(getDailyText(res,4));
-                    binding.dailyText6.setText(getDailyText(res,5));
-                    binding.dailyText7.setText(getDailyText(res,6));
-                    binding.dailyText8.setText(getDailyText(res,7));
-                    binding.dailyText9.setText(getDailyText(res,8));
-                    binding.dailyText10.setText(getDailyText(res,9));
+                //sunucu cevap verdi, yani bu bağlantı yöntemi çalışıyor. cevap hata olsa bile bağlantı sorunu değildir.
+                setConnection(http);
+                ForecastResponse res = response.isSuccessful() ? response.body() : null;
+                //geçerli veri alınamayan her durum (http hatası, boş yanıt, eksik liste) hata sayılır.
+                if (res == null || res.getLists() == null || res.getLists().size() < 10) {
+                    dailyFailed();
+                    return;
                 }
+                dailyFailures = 0;
+                binding.dailyText1.setText(getDailyText(res,0));
+                binding.dailyText2.setText(getDailyText(res,1));
+                binding.dailyText3.setText(getDailyText(res,2));
+                binding.dailyText4.setText(getDailyText(res,3));
+                binding.dailyText5.setText(getDailyText(res,4));
+                binding.dailyText6.setText(getDailyText(res,5));
+                binding.dailyText7.setText(getDailyText(res,6));
+                binding.dailyText8.setText(getDailyText(res,7));
+                binding.dailyText9.setText(getDailyText(res,8));
+                binding.dailyText10.setText(getDailyText(res,9));
             }
             @Override
             public void onFailure(@NonNull Call<ForecastResponse> call, @NonNull Throwable t) {
                 Log.e(TAG, "onFailure: Daily not loaded", t);
+                //bağlantı kurulamadı. diğer yöntem denenmediyse önce o denenir, henüz hata sayılmaz.
+                if (!retried) {
+                    getDaily(!http, true);
+                    return;
+                }
+                dailyFailed();
             }
         });
     }
@@ -306,33 +351,94 @@ public class MainActivity extends AppCompatActivity {
         return s1;
     }
 
-    void getIcon(){
-        Call<ResponseBody> call = api.getIcon(iconId);
-        call.enqueue(new Callback<ResponseBody>() {
-            @Override
-            public void onResponse(@NonNull Call<ResponseBody> call, @NonNull Response<ResponseBody> response) {
-                if (response.isSuccessful()) {
-                    ResponseBody responseBody = response.body();
-                    try {
-                        Log.i(TAG, "onResponse: icon loaded success start");
-                        assert responseBody != null;
-                        byte[] bytes = responseBody.bytes();
-                        Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-                        Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap,80,80,true);
-                        mainWeatherDrawable = new BitmapDrawable(getResources(), scaledBitmap);
-                        Log.i(TAG, "onResponse: icon loaded success end");
-                    } catch (IOException e) {
-                        System.out.println("Icon not loaded catch:"+e.getLocalizedMessage());
-                    }
-                }else{
-                    Log.d(TAG, "onResponse: icon not loaded");
-                }
-            }
-            @Override
-            public void onFailure(@NonNull Call<ResponseBody> call, @NonNull Throwable t) {
-                Log.e(TAG, "onFailure: Icon not loaded", t);
-            }
-        });
+    //sarsıntı algılanınca 3 saniye boyunca arka plan kırmızı olur, beyaz ışık patlamaları görünür ve bip sesi çalar.
+    //alarm sırasında algılama kapalıdır, bitince hemen yeniden başlar.
+    void startAlarm(){
+        if (alarmActive) return;
+        alarmActive = true;
+        shakeDetector.stop();
+        binding.effectView.setVisibility(View.INVISIBLE);
+        binding.getRoot().setBackgroundColor(ContextCompat.getColor(this, R.color.alarm_red));
+        handler.post(runFlash);
+        try {
+            //ses seviyesine dokunulmaz. alarm kanalında, tonun en yüksek seviyesiyle çalar.
+            toneGenerator = new ToneGenerator(AudioManager.STREAM_ALARM, ToneGenerator.MAX_VOLUME);
+            toneGenerator.startTone(ToneGenerator.TONE_DTMF_S, ALARM_MS);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "startAlarm: tone not played", e);
+        }
+        handler.postDelayed(runAlarmEnd, ALARM_MS);
+    }
+
+    void stopAlarm(){
+        if (!alarmActive) return;
+        alarmActive = false;
+        handler.removeCallbacks(runAlarmEnd);
+        handler.removeCallbacks(runFlash);
+        handler.removeCallbacks(runFlashEnd);
+        if (toneGenerator != null) {
+            toneGenerator.stopTone();
+            toneGenerator.release();
+            toneGenerator = null;
+        }
+        binding.effectView.setVisibility(View.VISIBLE);
+        applyBackground();
+        if (resumed) shakeDetector.start();
+    }
+
+    OpenWeatherMapAPI createApi(String baseUrl){
+        return new Retrofit.Builder()
+                .baseUrl(baseUrl)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(OpenWeatherMapAPI.class);
+    }
+
+    //son başarılı bağlantı yöntemi hatırlanır. sonraki istekler önce bununla denenir.
+    //bellekte tutulur, uygulama yeniden başlayınca https ile başlanır.
+    void setConnection(boolean http){
+        if (useHttp != http)
+            Log.i(TAG, "setConnection: switched to " + (http ? "http" : "https"));
+        useHttp = http;
+    }
+
+    //arka plan rengi ve efekt güncel hava durumu ikon koduna göre ayarlanır.
+    //gündüz mavi, gece siyah. ikon kodu yoksa (açılış ya da veri alınamadığında) siyah.
+    void applyBackground(){
+        //alarm sırasında arka plan kırmızı kalır. alarm bitince bu metot yeniden çağrılır.
+        if (alarmActive) return;
+        int color = ContextCompat.getColor(this, R.color.black);
+        if (iconId != null && iconId.length() >= 3 && !iconId.endsWith("n"))
+            color = ContextCompat.getColor(this, R.color.sky_day);
+        binding.getRoot().setBackgroundColor(color);
+        binding.effectView.setWeather(iconId, color);
+    }
+
+    //hata sayısı eşiğe ulaşana kadar son durum korunur. ulaşınca açılıştaki hale dönülür.
+    void weatherFailed(){
+        if (weatherFailures < MAX_FAILURES) weatherFailures++;
+        if (weatherFailures < MAX_FAILURES) return;
+        hasWeather = false;
+        iconId = "";
+        applyBackground();
+    }
+
+    void dailyFailed(){
+        if (dailyFailures < MAX_FAILURES) dailyFailures++;
+        if (dailyFailures >= MAX_FAILURES) clearDaily();
+    }
+
+    void clearDaily(){
+        binding.dailyText1.setText("");
+        binding.dailyText2.setText("");
+        binding.dailyText3.setText("");
+        binding.dailyText4.setText("");
+        binding.dailyText5.setText("");
+        binding.dailyText6.setText("");
+        binding.dailyText7.setText("");
+        binding.dailyText8.setText("");
+        binding.dailyText9.setText("");
+        binding.dailyText10.setText("");
     }
 
 
@@ -351,6 +457,9 @@ public class MainActivity extends AppCompatActivity {
         //uygulama sadece önplandayken çalıştır.
         handler.post(runnable);
         handler.post(runWeather);
+        binding.effectView.start();
+        resumed = true;
+        shakeDetector.start();
     }
 
     @Override
@@ -359,7 +468,10 @@ public class MainActivity extends AppCompatActivity {
         //arkaplanda çalışmayı durdurur.
         handler.removeCallbacks(runnable);
         handler.removeCallbacks(runWeather);
-        handler.removeCallbacks(runIcon);
+        binding.effectView.stop();
+        resumed = false;
+        shakeDetector.stop();
+        stopAlarm();
     }
 
     String[][] unitCodes = {

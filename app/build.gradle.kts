@@ -4,12 +4,13 @@ plugins {
 
 android {
     namespace = "com.gns.wallclock"
-    compileSdk = 34
+    compileSdk = 36
+    buildToolsVersion = "36.1.0"
 
     defaultConfig {
         applicationId = "com.gns.wallclock"
         minSdk = 14
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
         multiDexEnabled = true

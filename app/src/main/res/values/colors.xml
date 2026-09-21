@@ -2,4 +2,8 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <!-- gündüz arka planı. beyaz yazıyla okunabilmesi için koyu tutuldu. -->
+    <color name="sky_day">#FF0F4C8A</color>
+    <!-- sarsıntı alarmı arka planı. beyaz yazıyla okunabilmesi için koyu kırmızı. -->
+    <color name="alarm_red">#FFC00000</color>
 </resources>
