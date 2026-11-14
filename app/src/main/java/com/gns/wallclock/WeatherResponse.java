@@ -7,6 +7,27 @@ import java.util.List;
 public class WeatherResponse {
     @SerializedName("main")
     private Main main;
+    @SerializedName("coord")
+    private Coord coord;
+
+    public Coord getCoord() {
+        return coord;
+    }
+
+    public static class Coord {
+        @SerializedName("lat")
+        private double lat;
+        @SerializedName("lon")
+        private double lon;
+
+        public double getLat() {
+            return lat;
+        }
+
+        public double getLon() {
+            return lon;
+        }
+    }
 
     public Main getMain() {
         return main;

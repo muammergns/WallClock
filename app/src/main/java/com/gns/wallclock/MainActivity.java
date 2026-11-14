@@ -6,12 +6,15 @@ import android.media.ToneGenerator;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.util.Log;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
@@ -22,6 +25,7 @@ import com.gns.wallclock.databinding.SettingsLayoutBinding;
 
 import java.text.DateFormat;
 import java.text.MessageFormat;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -44,7 +48,8 @@ public class MainActivity extends AppCompatActivity {
     Runnable runnable,runWeather;
     DateFormat clockFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
     DateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy EEEE", Locale.getDefault());
-    DateFormat dailyFormat = new SimpleDateFormat("HH",Locale.getDefault());
+    DateFormat dailyFormat = new SimpleDateFormat("HH:mm",Locale.getDefault());
+    DateFormat quakeDateFormat = new SimpleDateFormat("dd.MM.yy",Locale.getDefault());
     String city;
     String apiKey;
     double temperature;
@@ -55,7 +60,7 @@ public class MainActivity extends AppCompatActivity {
     int unitNum;
     float clockTextSize;
     float dateTextSize;
-    float dailyTextSize;
+    float dailyTextSize, quakeTextSize, quakeMinMagnitude;
     SharedPreferences preferences;
     ArrayAdapter<String> langAdapter,metricAdapter;
     String defaultKey, defaultCity;
@@ -71,6 +76,14 @@ public class MainActivity extends AppCompatActivity {
     ToneGenerator toneGenerator;
     boolean alarmActive, resumed;
     Runnable runAlarmEnd, runFlash, runFlashEnd;
+    TextView[] dailyTexts;
+    static final long EMSC_INTERVAL_MS = 3600000;
+    static final double PLACE_MAX_KM = 30;
+    QuakeFinder quakeFinder;
+    boolean quakeBusy;
+    double emscLat, emscLon;
+    long emscTime;
+    QuakeFinder.Quake emscQuake;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,8 +97,11 @@ public class MainActivity extends AppCompatActivity {
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
+        dailyTexts = new TextView[]{binding.dailyText1, binding.dailyText2, binding.dailyText3, binding.dailyText4,
+                binding.dailyText5, binding.dailyText6, binding.dailyText7, binding.dailyText8};
         //varsayılan değerler atanır.
         clearDaily();
+        binding.quakeText.setText("");
         binding.dateText.setText("");
         binding.clockText.setText("");
 
@@ -106,7 +122,7 @@ public class MainActivity extends AppCompatActivity {
         binding.effectView.setFps(effectFps);
 
         //sarsıntı hassasiyeti ayarlanır. 0 ise alarm kapalıdır.
-        shakeLevel = preferences.getFloat("shakeLevel",10);
+        shakeLevel = preferences.getFloat("shakeLevel",4);
         shakeDetector = new ShakeDetector(this, this::startAlarm);
         shakeDetector.setSensitivity(shakeLevel);
         runAlarmEnd = this::stopAlarm;
@@ -122,6 +138,8 @@ public class MainActivity extends AppCompatActivity {
         //eski cihazlarda SSL sorunu yaşamamak için böyle yapıldı.
         apiHttps = createApi("https://api.openweathermap.org/");
         apiHttp = createApi("http://api.openweathermap.org/");
+        quakeFinder = new QuakeFinder(this);
+        quakeMinMagnitude = preferences.getFloat("quakeMinMagnitude",2.5f);
 
         //ayarlar penceresi için adapter oluşturulur.
         List<String> langlist = new ArrayList<>();
@@ -172,8 +190,10 @@ public class MainActivity extends AppCompatActivity {
         settingsLayoutBinding.clockTextSize.setText(String.valueOf(preferences.getFloat("clockTextSize",300)));
         settingsLayoutBinding.dateTextSize.setText(String.valueOf(preferences.getFloat("dateTextSize",55)));
         settingsLayoutBinding.dailyTextSize.setText(String.valueOf(preferences.getFloat("dailyTextSize",36)));
+        settingsLayoutBinding.quakeTextSize.setText(String.valueOf(preferences.getFloat("quakeTextSize",30)));
+        settingsLayoutBinding.quakeMinMagnitude.setText(String.valueOf(preferences.getFloat("quakeMinMagnitude",2.5f)));
         settingsLayoutBinding.effectFps.setText(String.valueOf(preferences.getFloat("effectFps",2)));
-        settingsLayoutBinding.shakeLevel.setText(String.valueOf(preferences.getFloat("shakeLevel",10)));
+        settingsLayoutBinding.shakeLevel.setText(String.valueOf(preferences.getFloat("shakeLevel",4)));
 
         //ayarlar penceresi için adapterlar oluşturulur.
         settingsLayoutBinding.langSpinner.setAdapter(langAdapter);
@@ -193,8 +213,12 @@ public class MainActivity extends AppCompatActivity {
             clockTextSize = getFloat(settingsLayoutBinding.clockTextSize,300);
             dateTextSize = getFloat(settingsLayoutBinding.dateTextSize,55);
             dailyTextSize = getFloat(settingsLayoutBinding.dailyTextSize,36);
+            quakeTextSize = getFloat(settingsLayoutBinding.quakeTextSize,30);
+            float minMagnitude = getFloat(settingsLayoutBinding.quakeMinMagnitude,2.5f);
+            if (minMagnitude != quakeMinMagnitude) emscTime = 0;
+            quakeMinMagnitude = minMagnitude;
             effectFps = getFloat(settingsLayoutBinding.effectFps,2);
-            shakeLevel = getFloat(settingsLayoutBinding.shakeLevel,10);
+            shakeLevel = getFloat(settingsLayoutBinding.shakeLevel,4);
             preferences.edit().putString("apikey",apiKey).apply();
             preferences.edit().putString("city", city).apply();
             preferences.edit().putInt("langnum",langNum).apply();
@@ -202,6 +226,8 @@ public class MainActivity extends AppCompatActivity {
             preferences.edit().putFloat("clockTextSize",clockTextSize).apply();
             preferences.edit().putFloat("dateTextSize",dateTextSize).apply();
             preferences.edit().putFloat("dailyTextSize",dailyTextSize).apply();
+            preferences.edit().putFloat("quakeTextSize",quakeTextSize).apply();
+            preferences.edit().putFloat("quakeMinMagnitude",quakeMinMagnitude).apply();
             preferences.edit().putFloat("effectFps",effectFps).apply();
             preferences.edit().putFloat("shakeLevel",shakeLevel).apply();
             setTextSizes();
@@ -236,18 +262,11 @@ public class MainActivity extends AppCompatActivity {
         clockTextSize = preferences.getFloat("clockTextSize",300);
         dateTextSize = preferences.getFloat("dateTextSize",55);
         dailyTextSize = preferences.getFloat("dailyTextSize",36);
+        quakeTextSize = preferences.getFloat("quakeTextSize",30);
+        binding.quakeText.setTextSize(quakeTextSize);
         binding.clockText.setTextSize(clockTextSize);
         binding.dateText.setTextSize(dateTextSize);
-        binding.dailyText1.setTextSize(dailyTextSize);
-        binding.dailyText2.setTextSize(dailyTextSize);
-        binding.dailyText3.setTextSize(dailyTextSize);
-        binding.dailyText4.setTextSize(dailyTextSize);
-        binding.dailyText5.setTextSize(dailyTextSize);
-        binding.dailyText6.setTextSize(dailyTextSize);
-        binding.dailyText7.setTextSize(dailyTextSize);
-        binding.dailyText8.setTextSize(dailyTextSize);
-        binding.dailyText9.setTextSize(dailyTextSize);
-        binding.dailyText10.setTextSize(dailyTextSize);
+        for (TextView t : dailyTexts) t.setTextSize(dailyTextSize);
     }
 
     void getWeather(){
@@ -275,6 +294,7 @@ public class MainActivity extends AppCompatActivity {
                 String icon = res.getWeather().get(0).getIconId();
                 iconId = icon == null ? "" : icon;
                 applyBackground();
+                if (res.getCoord() != null) getQuake(res.getCoord().getLat(), res.getCoord().getLon());
             }
             @Override
             public void onFailure(@NonNull Call<WeatherResponse> call, @NonNull Throwable t) {
@@ -304,21 +324,12 @@ public class MainActivity extends AppCompatActivity {
                 setConnection(http);
                 ForecastResponse res = response.isSuccessful() ? response.body() : null;
                 //geçerli veri alınamayan her durum (http hatası, boş yanıt, eksik liste) hata sayılır.
-                if (res == null || res.getLists() == null || res.getLists().size() < 10) {
+                if (res == null || res.getLists() == null || res.getLists().size() < dailyTexts.length) {
                     dailyFailed();
                     return;
                 }
                 dailyFailures = 0;
-                binding.dailyText1.setText(getDailyText(res,0));
-                binding.dailyText2.setText(getDailyText(res,1));
-                binding.dailyText3.setText(getDailyText(res,2));
-                binding.dailyText4.setText(getDailyText(res,3));
-                binding.dailyText5.setText(getDailyText(res,4));
-                binding.dailyText6.setText(getDailyText(res,5));
-                binding.dailyText7.setText(getDailyText(res,6));
-                binding.dailyText8.setText(getDailyText(res,7));
-                binding.dailyText9.setText(getDailyText(res,8));
-                binding.dailyText10.setText(getDailyText(res,9));
+                for (int i = 0; i < dailyTexts.length; i++) dailyTexts[i].setText(getDailyText(res, i));
             }
             @Override
             public void onFailure(@NonNull Call<ForecastResponse> call, @NonNull Throwable t) {
@@ -333,22 +344,80 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    String getDailyText(ForecastResponse res, int idx){
-        String s1 = res.getLists().get(idx).getWeather().get(0).getDescription();
-        StringBuilder newStr = new StringBuilder();
-        for (String word : s1.split(" ")) {
-            String firstChar = word.substring(0, 1).toUpperCase();
-            String rest = word.substring(1);
-            newStr.append(firstChar).append(rest).append(" ");
+    CharSequence getDailyText(ForecastResponse res, int idx){
+        ForecastResponse.Weathers item = res.getLists().get(idx);
+        ForecastResponse.Weathers.Weather weather = item.getWeather().get(0);
+        boolean night = weather.getIconId() != null && weather.getIconId().endsWith("n");
+        SpannableStringBuilder text = new SpannableStringBuilder(dailyFormat.format(new Date(item.getDate()))).append("\n");
+        int iconStart = text.length();
+        text.append(WeatherIcons.glyph(weather.getConditionId(), night));
+        text.setSpan(new WeatherIcons.Span(WeatherIcons.typeface(this)), iconStart, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return text.append(" ").append(String.valueOf((int) item.getMain().getTemperature())).append("°");
+    }
+
+    void getQuake(double lat, double lon){
+        if (quakeBusy) return;
+        quakeBusy = true;
+        double minMagnitude = quakeMinMagnitude;
+        new Thread(() -> {
+            QuakeFinder.Quake quake = null;
+            boolean found = false;
+            try {
+                quake = quakeFinder.findAfad(lat, lon, minMagnitude);
+                found = quake != null;
+            } catch (IOException e) {
+                Log.e(TAG, "getQuake: AFAD not loaded", e);
+            }
+            if (!found) {
+                try {
+                    if (emscTime == 0 || System.currentTimeMillis() - emscTime >= EMSC_INTERVAL_MS || emscLat != lat || emscLon != lon) {
+                        emscQuake = quakeFinder.findEmsc(lat, lon, minMagnitude);
+                        if (emscQuake != null) emscQuake.place = placeName(emscQuake.lat, emscQuake.lon);
+                        emscTime = System.currentTimeMillis();
+                        emscLat = lat;
+                        emscLon = lon;
+                    }
+                    quake = emscQuake;
+                    found = true;
+                } catch (IOException e) {
+                    Log.e(TAG, "getQuake: EMSC not loaded", e);
+                }
+            }
+            QuakeFinder.Quake result = quake;
+            boolean show = found;
+            handler.post(() -> {
+                quakeBusy = false;
+                if (show) binding.quakeText.setText(getQuakeText(result));
+            });
+        }).start();
+    }
+
+    //EMSC ilçe adı vermez, OpenWeatherMap'ten alınır. bulunamazsa koordinat yazılır. arka plan iş parçacığında çağrılır.
+    //denizdeki noktalar için servis ülkenin kendisini (orta noktasıyla) döndürüyor, uzaktaki ad yok sayılır.
+    String placeName(double lat, double lon){
+        for (boolean http : new boolean[]{useHttp, !useHttp}) {
+            try {
+                Response<List<OpenWeatherMapAPI.Place>> response = (http ? apiHttp : apiHttps).reverse(lat, lon, 1, apiKey).execute();
+                List<OpenWeatherMapAPI.Place> places = response.body();
+                if (response.isSuccessful() && places != null && !places.isEmpty()) {
+                    OpenWeatherMapAPI.Place place = places.get(0);
+                    if (QuakeFinder.distanceKm(lat, lon, place.lat, place.lon) > PLACE_MAX_KM) break;
+                    String local = place.localNames == null ? null : place.localNames.get(getLangCode(langNum));
+                    if (local != null && !local.isEmpty()) return local;
+                    if (place.name != null && !place.name.isEmpty()) return place.name;
+                }
+                break;
+            } catch (IOException e) {
+                Log.e(TAG, "placeName: place not loaded", e);
+            }
         }
-        newStr = new StringBuilder(newStr.substring(0, newStr.length() - 1));
-        s1 = newStr.toString();
-        s1 += "\n";
-        s1 += dailyFormat.format(new Date(res.getLists().get(idx).getDate()));
-        s1 += ": ";
-        s1 += String.valueOf(Double.valueOf(res.getLists().get(idx).getMain().getTemperature()).intValue());
-        s1 += unitCodes[unitNum][0];
-        return s1;
+        return String.format(Locale.US, "%.2f, %.2f", lat, lon);
+    }
+
+    String getQuakeText(QuakeFinder.Quake quake){
+        if (quake == null) return "";
+        return String.format(Locale.US, "%.1f · %d km · %s · %s", quake.magnitude, Math.round(quake.distanceKm),
+                quakeDateFormat.format(new Date(quake.time)), quake.place == null ? "" : quake.place);
     }
 
     //sarsıntı algılanınca 3 saniye boyunca arka plan kırmızı olur, beyaz ışık patlamaları görünür ve bip sesi çalar.
@@ -429,16 +498,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void clearDaily(){
-        binding.dailyText1.setText("");
-        binding.dailyText2.setText("");
-        binding.dailyText3.setText("");
-        binding.dailyText4.setText("");
-        binding.dailyText5.setText("");
-        binding.dailyText6.setText("");
-        binding.dailyText7.setText("");
-        binding.dailyText8.setText("");
-        binding.dailyText9.setText("");
-        binding.dailyText10.setText("");
+        for (TextView t : dailyTexts) t.setText("");
     }
 
 

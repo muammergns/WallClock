@@ -46,6 +46,8 @@ public class ForecastResponse {
 
         public class Weather {
 
+            @SerializedName("id")
+            private int conditionId;
             @SerializedName("description")
             private String description;
             @SerializedName("icon")
@@ -57,6 +59,10 @@ public class ForecastResponse {
 
             public String getIconId(){
                 return iconId;
+            }
+
+            public int getConditionId(){
+                return conditionId;
             }
         }
     }

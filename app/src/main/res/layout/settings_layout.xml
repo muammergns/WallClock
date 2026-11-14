@@ -72,6 +72,30 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/date_text_size" />
         <EditText
+            android:id="@+id/quake_text_size"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:ems="10"
+            android:gravity="center"
+            android:inputType="numberDecimal"
+            android:hint="@string/quake_text_size"
+            android:layout_marginTop="4dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/daily_text_size" />
+        <EditText
+            android:id="@+id/quake_min_magnitude"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:ems="10"
+            android:gravity="center"
+            android:inputType="numberDecimal"
+            android:hint="@string/quake_min_magnitude"
+            android:layout_marginTop="4dp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/quake_text_size" />
+        <EditText
             android:id="@+id/effect_fps"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -82,7 +106,7 @@
             android:layout_marginTop="4dp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/daily_text_size" />
+            app:layout_constraintTop_toBottomOf="@+id/quake_min_magnitude" />
         <EditText
             android:id="@+id/shake_level"
             android:layout_width="0dp"

@@ -51,22 +51,39 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/dateText" />
 
+    <!-- yakındaki en son deprem. saatin altındaki boşlukta, saatle üst üste durur. -->
+    <TextView
+        android:id="@+id/quakeText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="@color/white"
+        android:textSize="30sp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
     <HorizontalScrollView
         android:id="@+id/horizontalLayout"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:translationY="-4dp"
+        android:fillViewport="true"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/dateText">
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="horizontal" >
             <TextView
                 android:id="@+id/dailyText1"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:gravity="top|center"
                 android:textSize="36sp"
                 android:paddingHorizontal="8dp"
@@ -76,6 +93,7 @@
                 android:id="@+id/dailyText2"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:gravity="top|center"
                 android:textSize="36sp"
                 android:paddingHorizontal="8dp"
@@ -85,6 +103,7 @@
                 android:id="@+id/dailyText3"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:gravity="top|center"
                 android:textSize="36sp"
                 android:paddingHorizontal="8dp"
@@ -94,6 +113,7 @@
                 android:id="@+id/dailyText4"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:gravity="top|center"
                 android:textSize="36sp"
                 android:paddingHorizontal="8dp"
@@ -103,6 +123,7 @@
                 android:id="@+id/dailyText5"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:gravity="top|center"
                 android:textSize="36sp"
                 android:paddingHorizontal="8dp"
@@ -112,6 +133,7 @@
                 android:id="@+id/dailyText6"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:gravity="top|center"
                 android:textSize="36sp"
                 android:paddingHorizontal="8dp"
@@ -121,6 +143,7 @@
                 android:id="@+id/dailyText7"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:gravity="top|center"
                 android:textSize="36sp"
                 android:paddingHorizontal="8dp"
@@ -130,24 +153,7 @@
                 android:id="@+id/dailyText8"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:gravity="top|center"
-                android:textSize="36sp"
-                android:paddingHorizontal="8dp"
-                android:textColor="@color/white"
-                android:text="AÇIK\n21:19'C"/>
-            <TextView
-                android:id="@+id/dailyText9"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:gravity="top|center"
-                android:textSize="36sp"
-                android:paddingHorizontal="8dp"
-                android:textColor="@color/white"
-                android:text="AÇIK\n21:19'C"/>
-            <TextView
-                android:id="@+id/dailyText10"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:gravity="top|center"
                 android:textSize="36sp"
                 android:paddingHorizontal="8dp"
