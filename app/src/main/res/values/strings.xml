@@ -8,5 +8,23 @@
     <string name="quake_text_size">Earthquake Text Size</string>
     <string name="quake_min_magnitude">Earthquake Min Magnitude</string>
     <string name="effect_fps">Effect FPS (0 = off)</string>
-    <string name="shake_level">Shake Alert Threshold (0 = off, 4 = 0.04 m/s², lower = more sensitive)</string>
+    <string name="shake_level">Shake Alert Threshold in mm/s² (0 = off, lower = more sensitive)</string>
+    <string name="label_language">Language</string>
+    <string name="label_units">Units</string>
+    <string name="label_api">API</string>
+    <string name="label_city">City</string>
+    <string name="label_clock">Clock</string>
+    <string name="label_date">Date</string>
+    <string name="label_forecast">Forecast</string>
+    <string name="label_quake">Quake</string>
+    <string name="label_magnitude">Magnitude</string>
+    <string name="label_fps">FPS</string>
+    <string name="label_shake">Shake</string>
+    <string name="label_stable">Stable</string>
+    <string name="stable_tolerance">Allowed noise difference in mm/s² (0 = off)</string>
+    <string name="tab_basic">Basic</string>
+    <string name="tab_display">Display</string>
+    <string name="tab_limits">Limits</string>
+    <string name="shake_countdown">%d s</string>
+    <string name="shake_value">%d mm/s²</string>
 </resources>

@@ -31,11 +31,14 @@ public class QuakeFinder {
     private static final double KM_PER_DEGREE = 111.19;
 
     public static class Quake {
+        //scale büyüklüğün ölçeğidir (ML, Mw gibi).
+        public final String scale;
         public final double magnitude, distanceKm, lat, lon;
         public final long time;
         public String place;
 
-        Quake(double magnitude, double distanceKm, double lat, double lon, long time, String place) {
+        Quake(String scale, double magnitude, double distanceKm, double lat, double lon, long time, String place) {
+            this.scale = scale;
             this.magnitude = magnitude;
             this.distanceKm = distanceKm;
             this.lat = lat;
@@ -61,6 +64,7 @@ public class QuakeFinder {
 
     static class AfadEvent {
         @SerializedName("magnitude") String magnitude;
+        @SerializedName("type") String type;
         @SerializedName("latitude") String latitude;
         @SerializedName("longitude") String longitude;
         @SerializedName("date") String date;
@@ -77,6 +81,7 @@ public class QuakeFinder {
 
         static class Properties {
             @SerializedName("mag") double mag;
+            @SerializedName("magtype") String magtype;
             @SerializedName("lat") double lat;
             @SerializedName("lon") double lon;
             @SerializedName("time") String time;
@@ -113,7 +118,7 @@ public class QuakeFinder {
             try {
                 double eLat = Double.parseDouble(e.latitude), eLon = Double.parseDouble(e.longitude);
                 String place = e.district != null && !e.district.isEmpty() ? e.district : e.location;
-                latest = newerFelt(latest, new Quake(Double.parseDouble(e.magnitude), distanceKm(lat, lon, eLat, eLon), eLat, eLon, format.parse(e.date).getTime(), place));
+                latest = newerFelt(latest, new Quake(scaleName(e.type), Double.parseDouble(e.magnitude), distanceKm(lat, lon, eLat, eLon), eLat, eLon, format.parse(e.date).getTime(), place));
             } catch (NumberFormatException | ParseException | NullPointerException ex) {
                 throw new IOException("AFAD: unexpected event format", ex);
             }
@@ -129,12 +134,20 @@ public class QuakeFinder {
         for (EmscResponse.Feature f : res.features) {
             EmscResponse.Properties p = f.properties;
             try {
-                latest = newerFelt(latest, new Quake(p.mag, distanceKm(lat, lon, p.lat, p.lon), p.lat, p.lon, format.parse(p.time.substring(0, 19)).getTime(), null));
+                latest = newerFelt(latest, new Quake(scaleName(p.magtype), p.mag, distanceKm(lat, lon, p.lat, p.lon), p.lat, p.lon, format.parse(p.time.substring(0, 19)).getTime(), null));
             } catch (ParseException | NullPointerException | IndexOutOfBoundsException ex) {
                 throw new IOException("EMSC: unexpected event format", ex);
             }
         }
         return latest;
+    }
+
+    //servisler ölçeği farklı yazar (AFAD "ML", EMSC "ml", "mb", "m"). ilk harf büyük yazılır, yerel ölçek ML olur. ölçek yoksa M yazılır.
+    static String scaleName(String type) {
+        if (type == null || type.trim().isEmpty()) return "M";
+        String s = type.trim();
+        if (s.equalsIgnoreCase("ml")) return "ML";
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     static double feltKm(double magnitude) {

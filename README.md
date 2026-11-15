@@ -9,7 +9,12 @@
 - uygulama üzerinden api key ve şehir(ilçeleri de destekliyor) girilerek hava durumu bilgisi alınabilir.
 
 - cihazın dokunmatiği bozuk olabilir, sadece ayar girmek için harici klavye/mouse bağlanabilir.
-- ayarlar penceresi kaydırılabilir, ekrana sığmayan alanlara kaydırarak ya da klavye/mouse ile ulaşılabilir.
+- ayarlar penceresi açılışta ve uygulama her ön plana geldiğinde açılır. yalnızca Save ya da Exit ile kapanır.
+  - ayarlar üç sayfadır, üstteki düğmelerle seçilir. her ayarın solunda adı yazar.
+    - Basic: Language, Units, API, City
+    - Display: Clock, Date, Forecast, Quake (yazı boyutları)
+    - Limits: Magnitude, FPS, Shake, Stable
+  - pencere kaydırılabilir, ekrana sığmayan alanlara kaydırarak ya da klavye/mouse ile ulaşılabilir.
 
 - güncel hava durumu için ikon gösterilmez. bunun yerine güncel hava durumuna göre arka plan ve hareketli efekt gösterilir.
 5-10 metre uzaktan bakıldığında ne olduğu anlaşılsın diye efektler büyük ve az sayıdadır.
@@ -26,26 +31,36 @@
 - tahmin şeridi gelecek 24 saati 3 saatlik adımlarla 8 kutuda gösterir: üstte saat, altta ikon ve sıcaklık.
   - ikonlar [Weather Icons](https://github.com/erikflowers/weather-icons) yazı tipindendir (SIL OFL 1.1). yazı tipi uygulamayla gelir, internetten ikon indirilmez.
   - ikon openweathermap durum koduna göre seçilir, gece/gündüz ikon kodunun son harfinden alınır.
-- deprem satırı: saatin altında, yakında hissedilmiş olabilecek en son deprem "büyüklük · uzaklık · tarih · yer" olarak gösterilir.
+- deprem satırı: saatin altında, yakında hissedilmiş olabilecek en son deprem "ölçek büyüklük · uzaklık · tarih · yer" olarak gösterilir (örneğin ML 4.2).
+  - sarsıntı alarmı açıksa satırın başında kalibrasyon sırasında kalan süre, sonrasında algılanan sarsıntı (mm/s²) yazar.
   - konum, hava durumu için girilen şehrin openweathermap koordinatıdır.
   - hissedilme uzaklığı büyüklüğe göre artar: 2.5 → 10 km, 3 → 25 km, 4 → 75 km, 5 → 150 km, 6 ve üstü → 300 km. ara değerler doğrusal hesaplanır.
   bu uzaklık içindeki depremlerden tarihi en yeni olan gösterilir. değerler kaba tahmindir.
   - önce AFAD'a bakılır (son birkaç haftayı verir). orada yoksa ya da AFAD'a ulaşılamazsa EMSC'ye bakılır (saatte bir yenilenir).
   - EMSC ilçe adı vermediği için yer adı openweathermap'ten alınır. bulunamazsa (deniz gibi) koordinat yazılır.
-  - alt büyüklük ayarlar penceresinden (Earthquake Min Magnitude) değiştirilebilir, varsayılan 2.5'tir. yazı boyutu Earthquake Text Size ile ayarlanır.
+  - ölçek AFAD ve EMSC'nin verdiği türdür (ML, Mw, mb gibi). ölçek gelmezse M yazılır.
+  - alt büyüklük Magnitude ayarıyla değiştirilebilir, varsayılan 2.5'tir. yazı boyutu Quake ayarıyla ayarlanır.
   - AFAD (GlobalSign Root R46) ve EMSC (ISRG Root X1) kök sertifikaları eski cihazlarda bulunmadığı için uygulamayla gelir.
   android 4.1-4.4'te TLS 1.1/1.2 açılır. AFAD en az TLS 1.1 istediği için android 4.0'da yalnızca EMSC çalışır.
   - veri alınamazsa son gösterilen deprem korunur.
-- efekt kare hızı ayarlar penceresinden (Effect FPS) değiştirilebilir. varsayılan değer 2'dir.
+- efekt kare hızı FPS ayarıyla değiştirilebilir. varsayılan değer 2'dir.
 0 girilirse efekt tamamen kapanır, en fazla 30 kabul edilir. düşük değer eski cihazların ısınmasını ve pil kullanımını azaltır.
 - sarsıntı alarmı: cihazın ivmeölçeriyle sarsıntı algılanırsa 3 saniye boyunca arka plan kırmızı olur,
-yarım saniyede bir kısa beyaz ışık patlaması görünür ve bip sesi çalar. 3 saniye sonra normale döner ve algılama yeniden başlar.
-  - tek bir değerin büyüklüğüne değil, sarsıntının ne kadar sürdüğüne bakılır. sarsıntı en az 3 saniye kesintisiz sürerse alarm verilir.
-  - cihazın sakin ortamdaki gürültüsü sürekli ölçülür ve ölçülen değerden güçte çıkarılır: sarsıntı = √(ölçülen² − gürültü²).
-  böylece sensörü gürültülü cihazlarda da aynı eşik kullanılabilir.
-  - eşik ayarlar penceresinden (Shake Alert Threshold) girilir, değer 100'e bölünerek m/s² olur. varsayılan 4 (0.04 m/s²), 0 kapalıdır.
-  küçük değer daha hassastır. eski sürümde kalan 10 değeri artık en az hassas ayar demektir, elle düşürülmelidir.
-  - masaya vurma ve çarpma da sehpayı birkaç saniye sallayabildiği için alarm verebilir. bunlar depremden ayrılamaz.
+yarım saniyede bir kısa beyaz ışık patlaması görünür ve bip sesi çalar.
+  - kalibrasyon: ayarlar penceresi kapanınca başlar ve deprem satırında geri sayım görünür.
+    - 20 saniye hizalama: cihaz yerleştirilebilir, dokunulabilir.
+    - 20 saniye ısınma ve 20 saniye ölçüm: cihaza dokunulmaz. ölçülen değer cihazın sakin ortamdaki gürültüsüdür.
+    - ölçüm sırasında sarsıntı eşiği aşarsa ya da ısınma ve ölçüm gürültülerinin farkı Stable ayarından büyükse ısınma ve ölçüm baştan başlar.
+    geri sayım sürekli baştan başlıyorsa eşik ya da Stable değeri bu cihaz için düşüktür.
+  - gürültü kalibrasyondan sonra sabit kalır. cihazın yeri değişirse uygulama arka plana atılıp açılarak yeniden ölçülür.
+  - sarsıntının gücü son 10 saniyenin değerlerine en küçük karelerle uydurulan doğruyla düzleştirilir ve gürültü güçte çıkarılır:
+  sarsıntı = √(düzleştirilmiş güç − gürültü²). sarsıntı eşiği aşınca alarm verilir.
+  - alarm sırasında okuma sürer. alarmın başından 13 saniye boyunca yeni alarm verilmez, böylece alarm öncesi değerler
+  10 saniyelik pencereden çıkar. sarsıntı sürüyorsa bu sürenin sonunda alarm yeniden verilir.
+  - eşik Shake ayarıyla mm/s² cinsinden girilir (0-1000). varsayılan 40, 0 kapalıdır, küçük değer daha hassastır.
+  eski sürümden kalan değer artık mm/s² sayılır, elle düzeltilmelidir (örneğin 9 → 90).
+  - Stable ayarı ısınma ve ölçüm gürültüleri arasında izin verilen farktır (mm/s²). varsayılan 20, 0 girilirse kontrol kapanır.
+  - masaya vurma ve çarpma da cihazı sarsabildiği için alarm verebilir. bunlar depremden ayrılamaz.
   - ses seviyesine uygulama müdahale etmez. alarm ses kanalının seviyesi cihazdan ayarlanmalıdır.
   - erken uyarı sistemi değildir, yalnızca sarsıntıyı algılar.
 - hava durumu ve tahmin bilgisi alınamazsa son durum korunur. üst üste 3 denemede (30 dakika) alınamazsa

@@ -7,36 +7,36 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.util.Log;
 
-//ivmeölçer ile deprem benzeri sarsıntı algılar. ayar 0 ise kapalıdır ve sensör hiç dinlenmez. ayar 0-10 arasındadır, 100'e bölünerek m/s² cinsinden sarsıntı eşiği olur, küçük değer daha hassastır.
-//tek bir değerin büyüklüğüne değil sarsıntının ne kadar sürdüğüne bakılır. ölçümler sehpada tıklatma ve çarpmaların en fazla
-//2.7 saniye, deprem taklitlerinin 13 saniyeden uzun sürdüğünü gösterdi. tepe değeri ve frekans bu ikisini ayırmıyordu.
-//1. yerçekimi çıkarılır, kalan sarsıntının gücü yarım saniyelik ortalama ile ölçülür (kısa ortalama).
-//2. sakin ortamın gürültüsü uzun ortalama ile cihazın kendisinde ölçülür. böylece sabit m/s² eşiğine gerek kalmaz.
-//3. gürültü güçte çıkarılarak sarsıntının kendisi bulunur: sarsıntı = √(kısa² − gürültü²). titreşimler değerde değil güçte toplandığı için
-//çıkarma da güçte yapılır. böylece aynı sarsıntı gürültüsü farklı cihazlarda aynı eşikle karşılaştırılır.
-//4. sarsıntı eşiği SHAKE_MIN_MS boyunca kesintisiz aşarsa alarm verilir.
-//filtreler sensörün ölçüm hızına değil geçen zamana göre çalışır, böylece her cihazda aynı davranır.
+//ivmeölçer ile deprem benzeri sarsıntı algılar. ayar mm/s² cinsinden sarsıntı eşiğidir (0-1000), 0 ise sensör hiç dinlenmez.
+//sarsıntı = √(düzleştirilmiş güç − gürültü²). güç, yerçekimi çıkarılmış ivmenin karesidir ve son SMOOTH_MS içindeki
+//değerlere en küçük karelerle uydurulan doğrunun şu anki noktasıyla düzleştirilir. gürültü kalibrasyonda ölçülür ve sabit kalır.
+//sarsıntı eşiği aşarsa alarm verilir. alarmın başından TRIGGER_HOLD_MS boyunca yeni alarm verilmez, okuma bu sırada da sürer.
 public class ShakeDetector implements SensorEventListener {
     public interface Listener {
         void onShake();
+        //kalibrasyon sırasında kalan süre değiştikçe çağrılır. align true ise cihaza dokunulabilir, false ise dokunulmamalıdır.
+        void onCalibrating(boolean align, int secondsLeft);
+        //algılama sırasında saniyede bir, son saniyenin en yüksek sarsıntısı ile çağrılır (m/s²).
+        void onShakeLevel(float shake);
     }
 
+    private enum Phase {IDLE, ALIGN, WARMUP, MEASURE, DETECT}
+
     private static final String TAG = "ShakeDetector";
-    //yerçekimini ayıran filtrenin süresi (saniye). 1 saniyelik salınımı yutmayacak kadar yavaştır.
+    //yerçekimini ayıran filtrenin süresi (saniye).
     private static final float GRAVITY_TAU = 1f;
-    //kısa ortalama: sarsıntı gücünün yumuşatma süresi (saniye).
-    private static final float SHORT_TAU = 0.5f;
-    //sakin ortam gürültüsünün öğrenilme süreleri (saniye). gürültü aşağı hızlı, yukarı yavaş öğrenilir.
-    //böylece açılışta ya da güçlü sarsıntıdan sonra şişen gürültü birkaç saniyede gerçek değerine iner.
-    //sarsıntı varken gürültü hiç değişmez, böylece süren sarsıntı kendini gürültü sanıp susturmaz.
-    private static final float NOISE_TAU_DOWN = 2f;
-    private static final float NOISE_TAU_UP = 30f;
-    //dinlemeye başlayınca bu süre boyunca sadece gürültü öğrenilir, alarm verilmez.
-    private static final long WARMUP_MS = 3000;
-    //sarsıntı bu süre kesintisiz devam ederse alarm verilir.
-    private static final long SHAKE_MIN_MS = 3000;
-    //bu süreden kısa düşüşler sarsıntıyı kesmiş sayılmaz (elle sallarken ya da deprem dalgaları arasında güç anlık düşebilir).
-    private static final long GAP_MAX_MS = 500;
+    //düzleştirme penceresi. uzadıkça dalgalanma azalır, sarsıntıya tepki gecikir.
+    private static final long SMOOTH_MS = 10000;
+    //pencerede tutulabilecek en fazla ölçüm. ölçüm hızı 200 Hz'e kadar 10 saniye sığar.
+    private static final int SMOOTH_CAPACITY = 2000;
+    //alarmın başından itibaren yeni alarm verilmeyen süre: pencere süresi + alarm süresi. bu sürede alarm öncesi değerler pencereden çıkar.
+    private static final long TRIGGER_HOLD_MS = SMOOTH_MS + MainActivity.ALARM_MS;
+    //kalibrasyon süreleri: hizalamada cihaza dokunulabilir, ısınma ve ölçümde dokunulmaz.
+    private static final long ALIGN_MS = 20000;
+    private static final long WARMUP_MS = 20000;
+    private static final long MEASURE_MS = 20000;
+    //algılanan sarsıntı ekrana bu aralıkla bildirilir.
+    private static final long REPORT_MS = 1000;
     //ölçülen değerler bu aralıkla loglanır (hassasiyeti ayarlayabilmek için).
     private static final long LOG_INTERVAL_MS = 5000;
 
@@ -46,16 +46,28 @@ public class ShakeDetector implements SensorEventListener {
     private float level;
     //gürültüden ayrılmış sarsıntı bu değeri (m/s²) aşarsa sarsıntı var sayılır.
     private float shakeThreshold;
-    private boolean active, registered;
+    //ısınma ve ölçüm gürültüleri arasındaki fark bu değerden (m/s²) küçükse ölçüm kabul edilir. 0 ise her ölçüm kabul edilir.
+    private float stableTolerance;
+    private boolean registered;
+    private Phase phase = Phase.IDLE;
 
     //eksen başına yerçekimi.
     private final float[] gravity = new float[3];
-    //güçler ivmenin karesi cinsindendir (m²/s⁴), oran karşılaştırılırken kareköke çevrilir.
+    //güçler ivmenin karesi cinsindendir (m²/s⁴).
     private float shortPower, noisePower;
-    //zamanlar sensör saatine göre milisaniyedir.
-    private long lastTimestamp, startTime, shakeStart, lastAbove, lastLog;
-    private boolean shaking;
-    private float logShake;
+    //düzleştirme penceresi: ölçüm zamanları (ms) ve güçleri, halka şeklinde.
+    private final long[] smoothTime = new long[SMOOTH_CAPACITY];
+    private final float[] smoothPower = new float[SMOOTH_CAPACITY];
+    private int smoothHead, smoothCount;
+    //kalibrasyonda gücün zamana göre toplamı ve süresi. ortalama güç = toplam / süre.
+    private double warmSum, warmTime, measureSum, measureTime;
+    private float warmPower;
+    //zamanlar sensör saatine göre milisaniyedir. phaseStart < 0 ise aşama ilk ölçümde başlar.
+    private long lastTimestamp, phaseStart, calibStart, lastLog, lastReport;
+    //bu zamandan önce alarm verilmez (bkz. TRIGGER_HOLD_MS).
+    private long detectFrom;
+    private float logShake, reportShake;
+    private int lastSeconds;
 
     public ShakeDetector(Context context, Listener listener) {
         this.listener = listener;
@@ -64,30 +76,45 @@ public class ShakeDetector implements SensorEventListener {
         if (accelerometer == null) Log.w(TAG, "ShakeDetector: no accelerometer, shake alert disabled");
     }
 
-    //0 kapatır. 4 için eşik 0.04 m/s² olur.
+    //0 kapatır. değer mm/s²'dir, 40 için eşik 0.04 m/s² olur. dinlemeyi başlatmaz, yeni değer bir sonraki kalibrasyonla geçerli olur.
     public void setSensitivity(float level) {
-        this.level = Math.max(0, Math.min(10, level));
-        shakeThreshold = this.level / 100f;
-        if (active) {
-            unregister();
-            register();
-        }
+        this.level = Math.max(0, Math.min(1000, level));
+        shakeThreshold = this.level / 1000f;
     }
 
-    //uygulama ön plana gelince ya da alarm bitince çağrılır.
-    public void start() {
-        active = true;
+    //değer mm/s²'dir. 0 kontrolü kapatır. yeni değer bir sonraki kalibrasyonla geçerli olur.
+    public void setStableTolerance(float mm) {
+        stableTolerance = Math.max(0, mm) / 1000f;
+    }
+
+    //algılama açık ve sensör varsa true döner.
+    public boolean isEnabled() {
+        return level > 0 && accelerometer != null;
+    }
+
+    //ayar penceresi kapanınca çağrılır. kalibrasyon baştan başlar, gürültü ölçüm sonunda yeniden belirlenir.
+    public void calibrate() {
+        unregister();
+        if (!isEnabled()) {
+            phase = Phase.IDLE;
+            return;
+        }
+        phase = Phase.ALIGN;
+        phaseStart = -1;
+        shortPower = 0;
+        smoothCount = 0;
+        lastSeconds = -1;
         register();
     }
 
-    //uygulama arka plana gidince ya da alarm başlayınca çağrılır.
+    //uygulama arka plana gidince çağrılır. yeniden başlamak için calibrate gerekir.
     public void stop() {
-        active = false;
         unregister();
+        phase = Phase.IDLE;
     }
 
     private void register() {
-        if (level <= 0 || accelerometer == null || registered) return;
+        if (registered) return;
         lastTimestamp = 0;
         registered = sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
         if (!registered) Log.w(TAG, "register: accelerometer listener not registered");
@@ -99,21 +126,48 @@ public class ShakeDetector implements SensorEventListener {
         registered = false;
     }
 
+    private void startPhase(Phase next, long now) {
+        phase = next;
+        phaseStart = now;
+        switch (next) {
+            case WARMUP:
+                calibStart = now;
+                warmSum = 0;
+                warmTime = 0;
+                break;
+            case MEASURE:
+                warmPower = warmTime > 0 ? (float) (warmSum / warmTime) : 0;
+                measureSum = 0;
+                measureTime = 0;
+                break;
+            case DETECT:
+                detectFrom = now;
+                lastLog = now;
+                lastReport = now;
+                logShake = 0;
+                reportShake = 0;
+                break;
+        }
+    }
+
+    //kalan süre saniye olarak değiştikçe bildirilir.
+    private void reportCountdown(boolean align, long leftMs) {
+        int seconds = (int) ((Math.max(0, leftMs) + 999) / 1000);
+        if (seconds == lastSeconds) return;
+        lastSeconds = seconds;
+        listener.onCalibrating(align, seconds);
+    }
+
     @Override
     public void onSensorChanged(SensorEvent event) {
         long now = event.timestamp / 1000000;
         float dt = (event.timestamp - lastTimestamp) / 1e9f;
-        boolean restart = lastTimestamp == 0 || dt <= 0 || dt > 0.5f;
+        boolean gap = lastTimestamp == 0 || dt <= 0 || dt > 0.5f;
         lastTimestamp = event.timestamp;
-        //ilk ölçümde ya da ölçümler arasında uzun boşluk varsa filtreler baştan başlar.
-        if (restart) {
+        //ilk ölçümde ya da ölçümler arasında uzun boşluk varsa yerçekimi baştan alınır.
+        if (gap) {
             System.arraycopy(event.values, 0, gravity, 0, 3);
-            shortPower = 0;
-            noisePower = 0;
-            shaking = false;
-            startTime = now;
-            lastLog = now;
-            logShake = 0;
+            if (phaseStart < 0) phaseStart = now;
             return;
         }
 
@@ -124,45 +178,111 @@ public class ShakeDetector implements SensorEventListener {
             float shake = event.values[i] - gravity[i];
             power += shake * shake;
         }
-        shortPower += dt / (SHORT_TAU + dt) * (power - shortPower);
+        shortPower = smooth(now, power);
 
-        //ısınma süresince gürültü kısa ortalamayla hızla öğrenilir.
-        if (now - startTime < WARMUP_MS) {
-            noisePower = shortPower;
+        switch (phase) {
+            case ALIGN:
+                //hizalama: filtreler oturur, değerler kullanılmaz.
+                if (now - phaseStart >= ALIGN_MS) startPhase(Phase.WARMUP, now);
+                else reportCountdown(true, ALIGN_MS - (now - phaseStart));
+                break;
+            case WARMUP:
+                warmSum += power * dt;
+                warmTime += dt;
+                if (now - phaseStart >= WARMUP_MS) startPhase(Phase.MEASURE, now);
+                reportCountdown(false, WARMUP_MS + MEASURE_MS - (now - calibStart));
+                break;
+            case MEASURE:
+                measure(now, power, dt);
+                break;
+            case DETECT:
+                detect(now, dt);
+                break;
+        }
+    }
+
+    //güç pencereye eklenir, pencereye uydurulan doğrunun şu anki değeri döner.
+    //zaman şu andan geriye saniye olarak alınır, doğru y = a + b·t olduğundan şu anki değer a'dır.
+    private float smooth(long now, float power) {
+        int tail = (smoothHead + SMOOTH_CAPACITY - smoothCount) % SMOOTH_CAPACITY;
+        while (smoothCount > 0 && (now - smoothTime[tail] > SMOOTH_MS || smoothCount == SMOOTH_CAPACITY)) {
+            tail = (tail + 1) % SMOOTH_CAPACITY;
+            smoothCount--;
+        }
+        smoothTime[smoothHead] = now;
+        smoothPower[smoothHead] = power;
+        smoothHead = (smoothHead + 1) % SMOOTH_CAPACITY;
+        smoothCount++;
+
+        double st = 0, stt = 0, sp = 0, stp = 0;
+        for (int i = 0, k = tail; i < smoothCount; i++, k = (k + 1) % SMOOTH_CAPACITY) {
+            double t = (smoothTime[k] - now) / 1000.0, p = smoothPower[k];
+            st += t;
+            stt += t * t;
+            sp += p;
+            stp += t * p;
+        }
+        int n = smoothCount;
+        double denom = n * stt - st * st;
+        //tek ölçüm ya da aynı zamanlı ölçümler varsa doğru çizilemez, ortalama kullanılır.
+        double value = denom > 1e-9 ? (stt * sp - st * stp) / denom : sp / n;
+        return (float) Math.max(0, value);
+    }
+
+    private void measure(long now, float power, float dt) {
+        //ölçüm sırasında dokunma: sarsıntı ısınmanın gürültüsüne göre eşiği aşarsa ısınma baştan başlar.
+        float shake = (float) Math.sqrt(Math.max(0, shortPower - warmPower));
+        if (shake >= shakeThreshold) {
+            Log.i(TAG, "measure: touched, restart. shake=" + shake + " warmup noise=" + Math.sqrt(warmPower) + " threshold=" + shakeThreshold);
+            startPhase(Phase.WARMUP, now);
+            reportCountdown(false, WARMUP_MS + MEASURE_MS);
             return;
         }
+        measureSum += power * dt;
+        measureTime += dt;
+        if (now - phaseStart < MEASURE_MS) {
+            reportCountdown(false, WARMUP_MS + MEASURE_MS - (now - calibStart));
+            return;
+        }
+        //ısınma ve ölçüm gürültülerinin farkı toleranstan küçükse ölçüm kabul edilir. ısınmanın değeri sadece bu karşılaştırma içindir.
+        float measurePower = measureTime > 0 ? (float) (measureSum / measureTime) : 0;
+        double warmNoise = Math.sqrt(warmPower), measureNoise = Math.sqrt(measurePower);
+        boolean stable = stableTolerance <= 0 || Math.abs(warmNoise - measureNoise) < stableTolerance;
+        Log.i(TAG, "measure: warmup noise=" + warmNoise + " measure noise=" + measureNoise + " stable=" + stable);
+        if (stable) {
+            noisePower = measurePower;
+            startPhase(Phase.DETECT, now);
+            listener.onShakeLevel(0);
+        } else {
+            startPhase(Phase.WARMUP, now);
+            reportCountdown(false, WARMUP_MS + MEASURE_MS);
+        }
+    }
 
+    private void detect(long now, float dt) {
         float shake = (float) Math.sqrt(Math.max(0, shortPower - noisePower));
         boolean above = shake >= shakeThreshold;
-        if (!above && !shaking) {
-            float noiseTau = shortPower < noisePower ? NOISE_TAU_DOWN : NOISE_TAU_UP;
-            noisePower += dt / (noiseTau + dt) * (shortPower - noisePower);
+
+        //son saniyenin en yüksek sarsıntısı ekrana bildirilir.
+        reportShake = Math.max(reportShake, shake);
+        if (now - lastReport >= REPORT_MS) {
+            listener.onShakeLevel(reportShake);
+            lastReport = now;
+            reportShake = 0;
         }
 
         //eşiği ayarlayabilmek için ölçülen en yüksek sarsıntı periyodik loglanır.
         logShake = Math.max(logShake, shake);
         if (now - lastLog >= LOG_INTERVAL_MS) {
-            Log.d(TAG, "onSensorChanged: last 5 s max shake=" + logShake + " noise=" + Math.sqrt(noisePower)
+            Log.d(TAG, "detect: last 5 s max shake=" + logShake + " noise=" + Math.sqrt(noisePower)
                     + " (threshold=" + shakeThreshold + ")");
             lastLog = now;
             logShake = 0;
         }
 
-        if (above) {
-            if (!shaking) {
-                shaking = true;
-                shakeStart = now;
-            }
-            lastAbove = now;
-        } else if (shaking && now - lastAbove > GAP_MAX_MS) {
-            shaking = false;
-        }
-
-        if (shaking && now - shakeStart >= SHAKE_MIN_MS) {
-            Log.i(TAG, "trigger: shaking for " + (now - shakeStart) + " ms shake=" + shake
-                    + " noise=" + Math.sqrt(noisePower) + " threshold=" + shakeThreshold);
-            //sarsıntı sürerse bir sonraki alarm için yeniden SHAKE_MIN_MS beklenir.
-            shakeStart = now;
+        if (above && now >= detectFrom) {
+            Log.i(TAG, "trigger: shake=" + shake + " noise=" + Math.sqrt(noisePower) + " threshold=" + shakeThreshold);
+            detectFrom = now + TRIGGER_HOLD_MS;
             listener.onShake();
         }
     }

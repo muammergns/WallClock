@@ -1,141 +1,296 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--ayarlar üç sayfadır, üstteki düğmelerle seçilir (bkz. MainActivity.showSettingsPage).
+her satırın solunda ayarın adı yazar. hint sadece alan boşken görünür, alanlar kayıtlı değerle dolu geldiği için ad ayrı yazılır.-->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content">
 
-    <androidx.constraintlayout.widget.ConstraintLayout
+    <LinearLayout
         android:layout_width="match_parent"
-        android:padding="4dp"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="4dp">
 
-        <EditText
-            android:id="@+id/api_code"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:hint="@string/open_weather_map_api_code"
-            android:inputType="text"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/metric_spinner" />
+            android:orientation="horizontal">
 
-        <EditText
-            android:id="@+id/city_name"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:inputType="text"
-            android:hint="@string/city_name"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/api_code" />
-        <EditText
-            android:id="@+id/clock_text_size"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:inputType="numberDecimal"
-            android:hint="@string/clock_text_size"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/city_name" />
-        <EditText
-            android:id="@+id/date_text_size"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:inputType="numberDecimal"
-            android:hint="@string/date_text_size"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/clock_text_size" />
-        <EditText
-            android:id="@+id/daily_text_size"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:inputType="numberDecimal"
-            android:hint="@string/daily_text_size"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/date_text_size" />
-        <EditText
-            android:id="@+id/quake_text_size"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:inputType="numberDecimal"
-            android:hint="@string/quake_text_size"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/daily_text_size" />
-        <EditText
-            android:id="@+id/quake_min_magnitude"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:inputType="numberDecimal"
-            android:hint="@string/quake_min_magnitude"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/quake_text_size" />
-        <EditText
-            android:id="@+id/effect_fps"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:inputType="numberDecimal"
-            android:hint="@string/effect_fps"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/quake_min_magnitude" />
-        <EditText
-            android:id="@+id/shake_level"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:ems="10"
-            android:gravity="center"
-            android:inputType="numberDecimal"
-            android:hint="@string/shake_level"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/effect_fps" />
+            <Button
+                android:id="@+id/tab_basic"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/tab_basic" />
 
+            <Button
+                android:id="@+id/tab_display"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/tab_display" />
 
-        <Spinner
-            android:id="@+id/lang_spinner"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent" />
+            <Button
+                android:id="@+id/tab_limits"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/tab_limits" />
+        </LinearLayout>
 
-        <Spinner
-            android:id="@+id/metric_spinner"
-            android:layout_width="0dp"
+        <TableLayout
+            android:id="@+id/page_basic"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/lang_spinner" />
-    </androidx.constraintlayout.widget.ConstraintLayout>
+            android:stretchColumns="1">
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_language" />
+
+                <Spinner
+                    android:id="@+id/lang_spinner"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_units" />
+
+                <Spinner
+                    android:id="@+id/metric_spinner"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_api" />
+
+                <EditText
+                    android:id="@+id/api_code"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="text"
+                    android:hint="@string/open_weather_map_api_code" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_city" />
+
+                <EditText
+                    android:id="@+id/city_name"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="text"
+                    android:hint="@string/city_name" />
+            </TableRow>
+        </TableLayout>
+
+        <TableLayout
+            android:id="@+id/page_display"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stretchColumns="1">
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_clock" />
+
+                <EditText
+                    android:id="@+id/clock_text_size"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="numberDecimal"
+                    android:hint="@string/clock_text_size" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_date" />
+
+                <EditText
+                    android:id="@+id/date_text_size"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="numberDecimal"
+                    android:hint="@string/date_text_size" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_forecast" />
+
+                <EditText
+                    android:id="@+id/daily_text_size"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="numberDecimal"
+                    android:hint="@string/daily_text_size" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_quake" />
+
+                <EditText
+                    android:id="@+id/quake_text_size"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="numberDecimal"
+                    android:hint="@string/quake_text_size" />
+            </TableRow>
+        </TableLayout>
+
+        <TableLayout
+            android:id="@+id/page_limits"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stretchColumns="1">
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_magnitude" />
+
+                <EditText
+                    android:id="@+id/quake_min_magnitude"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="numberDecimal"
+                    android:hint="@string/quake_min_magnitude" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_fps" />
+
+                <EditText
+                    android:id="@+id/effect_fps"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="numberDecimal"
+                    android:hint="@string/effect_fps" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_shake" />
+
+                <EditText
+                    android:id="@+id/shake_level"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="numberDecimal"
+                    android:hint="@string/shake_level" />
+            </TableRow>
+
+            <TableRow
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingEnd="8dp"
+                    android:paddingRight="8dp"
+                    android:text="@string/label_stable" />
+
+                <EditText
+                    android:id="@+id/stable_tolerance"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:inputType="numberDecimal"
+                    android:hint="@string/stable_tolerance" />
+            </TableRow>
+        </TableLayout>
+    </LinearLayout>
 </ScrollView>

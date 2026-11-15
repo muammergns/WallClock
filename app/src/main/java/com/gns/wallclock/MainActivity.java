@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity {
     //sarsıntı alarmı. sarsıntı algılanınca ALARM_MS boyunca arka plan kırmızı olur ve bip sesi çalar.
     static final int ALARM_MS = 3000;
     ShakeDetector shakeDetector;
-    float shakeLevel;
+    float shakeLevel, stableTolerance;
     ToneGenerator toneGenerator;
     boolean alarmActive, resumed;
     Runnable runAlarmEnd, runFlash, runFlashEnd;
@@ -84,6 +84,9 @@ public class MainActivity extends AppCompatActivity {
     double emscLat, emscLon;
     long emscTime;
     QuakeFinder.Quake emscQuake;
+    AlertDialog settingsDialog;
+    //deprem satırı iki parçadır: başta sarsıntı durumu (geri sayım ya da algılanan değer), sonra deprem bilgisi.
+    String shakeStatus = "", quakeInfo = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -122,9 +125,27 @@ public class MainActivity extends AppCompatActivity {
         binding.effectView.setFps(effectFps);
 
         //sarsıntı hassasiyeti ayarlanır. 0 ise alarm kapalıdır.
-        shakeLevel = preferences.getFloat("shakeLevel",4);
-        shakeDetector = new ShakeDetector(this, this::startAlarm);
+        shakeLevel = preferences.getFloat("shakeLevel",40);
+        shakeDetector = new ShakeDetector(this, new ShakeDetector.Listener() {
+            @Override
+            public void onShake() {
+                startAlarm();
+            }
+
+            @Override
+            public void onCalibrating(boolean align, int secondsLeft) {
+                //hizalama ve ölçümde sadece kalan süre gösterilir.
+                setShakeStatus(getString(R.string.shake_countdown, secondsLeft));
+            }
+
+            @Override
+            public void onShakeLevel(float shake) {
+                setShakeStatus(getString(R.string.shake_value, Math.round(shake * 1000)));
+            }
+        });
         shakeDetector.setSensitivity(shakeLevel);
+        stableTolerance = preferences.getFloat("stableTolerance",20);
+        shakeDetector.setStableTolerance(stableTolerance);
         runAlarmEnd = this::stopAlarm;
         //alarm sırasında yarım saniyede bir 100 ms beyaz ışık patlaması gösterilir.
         runFlash = () -> {
@@ -171,16 +192,13 @@ public class MainActivity extends AppCompatActivity {
             binding.horizontalLayout.smoothScrollTo(0,0);
         };
 
-        //uygulama açılışta ayarlar penceresi görüntülenir.
-        //kendi kendine dokunma alan cihazlar için bu şekilde ayarlandı.
-        //dokunma hiç çalışmıyorsa harici klavye-mouse bağlayarak giriş yapabılabilir.
-        showSettings();
     }
 
-    //ayarlar penceresi gösterilir.
+    //ayarlar penceresi gösterilir. pencere kapanınca sarsıntı kalibrasyonu başlar.
     void showSettings(){
+        if (settingsDialog != null) return;
         //ayarlar penceresi için binding nesnesi oluşturulur.
-        //açılışta sadece 1 defa çalışması yeterli olduğu için nesne burada oluşturulur.
+        //pencere her açılışta kayıtlı değerlerle yeniden oluşturulur.
         settingsLayoutBinding = SettingsLayoutBinding.inflate(getLayoutInflater());
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
 
@@ -193,13 +211,20 @@ public class MainActivity extends AppCompatActivity {
         settingsLayoutBinding.quakeTextSize.setText(String.valueOf(preferences.getFloat("quakeTextSize",30)));
         settingsLayoutBinding.quakeMinMagnitude.setText(String.valueOf(preferences.getFloat("quakeMinMagnitude",2.5f)));
         settingsLayoutBinding.effectFps.setText(String.valueOf(preferences.getFloat("effectFps",2)));
-        settingsLayoutBinding.shakeLevel.setText(String.valueOf(preferences.getFloat("shakeLevel",4)));
+        settingsLayoutBinding.shakeLevel.setText(String.valueOf(preferences.getFloat("shakeLevel",40)));
+        settingsLayoutBinding.stableTolerance.setText(String.valueOf(preferences.getFloat("stableTolerance",20)));
 
         //ayarlar penceresi için adapterlar oluşturulur.
         settingsLayoutBinding.langSpinner.setAdapter(langAdapter);
         settingsLayoutBinding.metricSpinner.setAdapter(metricAdapter);
         settingsLayoutBinding.langSpinner.setSelection(langNum);
         settingsLayoutBinding.metricSpinner.setSelection(unitNum);
+
+        //ayarlar üç sayfadır, üstteki düğmelerle seçilir. açılışta Basic seçilidir.
+        settingsLayoutBinding.tabBasic.setOnClickListener(v -> showSettingsPage(0));
+        settingsLayoutBinding.tabDisplay.setOnClickListener(v -> showSettingsPage(1));
+        settingsLayoutBinding.tabLimits.setOnClickListener(v -> showSettingsPage(2));
+        showSettingsPage(0);
 
         //ayarlar penceresi görünüm oluşturulur.
         builder.setView(settingsLayoutBinding.getRoot());
@@ -218,7 +243,8 @@ public class MainActivity extends AppCompatActivity {
             if (minMagnitude != quakeMinMagnitude) emscTime = 0;
             quakeMinMagnitude = minMagnitude;
             effectFps = getFloat(settingsLayoutBinding.effectFps,2);
-            shakeLevel = getFloat(settingsLayoutBinding.shakeLevel,4);
+            shakeLevel = getFloat(settingsLayoutBinding.shakeLevel,40);
+            stableTolerance = getFloat(settingsLayoutBinding.stableTolerance,20);
             preferences.edit().putString("apikey",apiKey).apply();
             preferences.edit().putString("city", city).apply();
             preferences.edit().putInt("langnum",langNum).apply();
@@ -230,9 +256,11 @@ public class MainActivity extends AppCompatActivity {
             preferences.edit().putFloat("quakeMinMagnitude",quakeMinMagnitude).apply();
             preferences.edit().putFloat("effectFps",effectFps).apply();
             preferences.edit().putFloat("shakeLevel",shakeLevel).apply();
+            preferences.edit().putFloat("stableTolerance",stableTolerance).apply();
             setTextSizes();
             binding.effectView.setFps(effectFps);
             shakeDetector.setSensitivity(shakeLevel);
+            shakeDetector.setStableTolerance(stableTolerance);
             getWeather();
             getDaily();
             binding.horizontalLayout.smoothScrollTo(0,0);
@@ -244,8 +272,44 @@ public class MainActivity extends AppCompatActivity {
         builder.setCancelable(false);
 
         //ayarlar penceresi gösterilir.
-        AlertDialog dialog = builder.create();
-        dialog.show();
+        settingsDialog = builder.create();
+        //pencere sadece Save ya da Exit ile kapanır. arka plana geçerken de kapatılır, o zaman kalibrasyon başlamaz.
+        //kapanış bildirimi gecikmeli gelir. arada uygulama ön plana dönüp yeni pencere açmış olabilir, bu yüzden
+        //sadece o anki pencerenin kapanışı kalibrasyonu başlatır.
+        AlertDialog dialog = settingsDialog;
+        dialog.setOnDismissListener(d -> {
+            if (settingsDialog != dialog) return;
+            settingsDialog = null;
+            if (resumed) startCalibration();
+        });
+        settingsDialog.show();
+    }
+
+    //seçilen sayfa görünür, düğmesi basılamaz hale gelir. böylece hangi sayfanın açık olduğu görülür.
+    void showSettingsPage(int page){
+        View[] pages = {settingsLayoutBinding.pageBasic, settingsLayoutBinding.pageDisplay, settingsLayoutBinding.pageLimits};
+        View[] tabs = {settingsLayoutBinding.tabBasic, settingsLayoutBinding.tabDisplay, settingsLayoutBinding.tabLimits};
+        for (int i = 0; i < pages.length; i++) {
+            pages[i].setVisibility(i == page ? View.VISIBLE : View.GONE);
+            tabs[i].setEnabled(i != page);
+        }
+    }
+
+    //sarsıntı kapalıysa deprem satırında sarsıntı durumu gösterilmez.
+    void startCalibration(){
+        shakeDetector.calibrate();
+        if (!shakeDetector.isEnabled()) setShakeStatus("");
+    }
+
+    void setShakeStatus(String status){
+        shakeStatus = status;
+        updateQuakeText();
+    }
+
+    void updateQuakeText(){
+        if (shakeStatus.isEmpty()) binding.quakeText.setText(quakeInfo);
+        else if (quakeInfo.isEmpty()) binding.quakeText.setText(shakeStatus);
+        else binding.quakeText.setText(shakeStatus + " · " + quakeInfo);
     }
 
     //ayarlar penceresinden edittext değerlerini sorunsuz almak için kullanılır.
@@ -387,7 +451,10 @@ public class MainActivity extends AppCompatActivity {
             boolean show = found;
             handler.post(() -> {
                 quakeBusy = false;
-                if (show) binding.quakeText.setText(getQuakeText(result));
+                if (show) {
+                    quakeInfo = getQuakeText(result);
+                    updateQuakeText();
+                }
             });
         }).start();
     }
@@ -416,16 +483,15 @@ public class MainActivity extends AppCompatActivity {
 
     String getQuakeText(QuakeFinder.Quake quake){
         if (quake == null) return "";
-        return String.format(Locale.US, "%.1f · %d km · %s · %s", quake.magnitude, Math.round(quake.distanceKm),
+        return String.format(Locale.US, "%s %.1f · %d km · %s · %s", quake.scale, quake.magnitude, Math.round(quake.distanceKm),
                 quakeDateFormat.format(new Date(quake.time)), quake.place == null ? "" : quake.place);
     }
 
     //sarsıntı algılanınca 3 saniye boyunca arka plan kırmızı olur, beyaz ışık patlamaları görünür ve bip sesi çalar.
-    //alarm sırasında algılama kapalıdır, bitince hemen yeniden başlar.
+    //alarm sırasında da algılama sürer. yeni alarm, alarmın başından pencere süresi + alarm süresi kadar sonra verilebilir (bkz. ShakeDetector).
     void startAlarm(){
         if (alarmActive) return;
         alarmActive = true;
-        shakeDetector.stop();
         binding.effectView.setVisibility(View.INVISIBLE);
         binding.getRoot().setBackgroundColor(ContextCompat.getColor(this, R.color.alarm_red));
         handler.post(runFlash);
@@ -452,7 +518,6 @@ public class MainActivity extends AppCompatActivity {
         }
         binding.effectView.setVisibility(View.VISIBLE);
         applyBackground();
-        if (resumed) shakeDetector.start();
     }
 
     OpenWeatherMapAPI createApi(String baseUrl){
@@ -519,7 +584,11 @@ public class MainActivity extends AppCompatActivity {
         handler.post(runWeather);
         binding.effectView.start();
         resumed = true;
-        shakeDetector.start();
+        //uygulama açılışta ve her ön plana gelişte ayarlar penceresi görüntülenir, yeni açılmış gibi davranır.
+        //arka plana atıldıysa cihaza dokunulmuştur, sarsıntı kalibrasyonu pencere kapanınca baştan yapılır.
+        //kendi kendine dokunma alan cihazlar için bu şekilde ayarlandı.
+        //dokunma hiç çalışmıyorsa harici klavye-mouse bağlayarak giriş yapabılabilir.
+        showSettings();
     }
 
     @Override
@@ -530,8 +599,15 @@ public class MainActivity extends AppCompatActivity {
         handler.removeCallbacks(runWeather);
         binding.effectView.stop();
         resumed = false;
+        //pencere hemen boşaltılır, böylece geri dönüşte yeni pencere açılır.
+        if (settingsDialog != null) {
+            AlertDialog dialog = settingsDialog;
+            settingsDialog = null;
+            dialog.dismiss();
+        }
         shakeDetector.stop();
         stopAlarm();
+        setShakeStatus("");
     }
 
     String[][] unitCodes = {
